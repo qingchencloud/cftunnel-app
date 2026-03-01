@@ -164,7 +164,10 @@ func (a *App) StartQuick(port string) QuickResult {
 		}
 	}
 
-	cmd := exec.Command(binPath, "tunnel", "--url", "http://localhost:"+port)
+	// 显式指定空配置文件，防止 cloudflared 读取用户已有的 ~/.cloudflared/config.yml
+	// 避免残留的 tunnel 字段触发 UUID 解析失败
+	cfgPath := quickConfigPath()
+	cmd := exec.Command(binPath, "tunnel", "--config", cfgPath, "--url", "http://localhost:"+port)
 	hideWindow(cmd)
 
 	stderr, err := cmd.StderrPipe()
@@ -219,6 +222,18 @@ func (a *App) StartQuick(port string) QuickResult {
 	}
 
 	return QuickResult{URL: ""}
+}
+
+// quickConfigPath 返回 quick 模式专用的空配置文件路径
+func quickConfigPath() string {
+	home, _ := os.UserHomeDir()
+	dir := home + "/.cftunnel"
+	p := dir + "/quick-config.yml"
+	if _, err := os.Stat(p); os.IsNotExist(err) {
+		os.MkdirAll(dir, 0700)
+		os.WriteFile(p, []byte("# cftunnel quick mode - empty config\n"), 0600)
+	}
+	return p
 }
 
 // quickURLPath 返回 URL 持久化文件路径
@@ -370,6 +385,47 @@ func extractTunnelURL(output string) string {
 		}
 	}
 	return ""
+}
+
+// DiagnoseResult 诊断结果（与 cftunnel diagnose --json 输出对应）
+type DiagnoseResult struct {
+	Cloudflared struct {
+		Installed bool   `json:"installed"`
+		Path      string `json:"path"`
+		Version   string `json:"version"`
+		Running   bool   `json:"running"`
+		PID       int    `json:"pid"`
+	} `json:"cloudflared"`
+	API struct {
+		Reachable bool   `json:"reachable"`
+		LatencyMS int64  `json:"latency_ms"`
+		Err       string `json:"err"`
+	} `json:"api"`
+	Routes []struct {
+		Name     string `json:"name"`
+		Hostname string `json:"hostname"`
+		Service  string `json:"service"`
+		LocalOK  bool   `json:"local_ok"`
+		LocalErr string `json:"local_err"`
+		DNSOK    bool   `json:"dns_ok"`
+		DNSErr   string `json:"dns_err"`
+		HTTPOK   bool   `json:"http_ok"`
+		HTTPErr  string `json:"http_err"`
+	} `json:"routes"`
+	Total  int `json:"total"`
+	Passed int `json:"passed"`
+	Failed int `json:"failed"`
+}
+
+// Diagnose 执行 Cloud 模式链路诊断
+func (a *App) Diagnose() DiagnoseResult {
+	var result DiagnoseResult
+	out, err := runCftunnel("diagnose", "--json")
+	if err != nil {
+		return result
+	}
+	json.Unmarshal([]byte(out), &result)
+	return result
 }
 
 // ==================== Relay 模式 ====================

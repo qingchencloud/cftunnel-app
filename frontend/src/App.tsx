@@ -1,13 +1,13 @@
 import { useState, useEffect, useCallback } from 'react'
 import './style.css'
-import { CheckInstall, GetStatus, GetRoutes, TunnelUp, TunnelDown, RunCommand, GetRelayStatus, GetRelayRules, RelayUp, RelayDown, RelayAddRule, RelayRemoveRule, RelayInit, RelayInstallService, RelayUninstallService, GetRelayLogs, RelayServerSetup, SelectDirectory, RelayCheck, GetAppVersion, CheckAppUpdate, StartQuick, QuickStop, QuickRunning, QuickURL } from '../wailsjs/go/main/App'
-import { IconDashboard, IconZap, IconRoute, IconTerminal, IconAlert, IconPlay, IconStop, IconRefresh, IconPlus, IconTrash, IconSend, IconClear, IconRelay, IconServer, IconLog, IconSetup, IconInfo } from './Icons'
+import { CheckInstall, GetStatus, GetRoutes, TunnelUp, TunnelDown, RunCommand, GetRelayStatus, GetRelayRules, RelayUp, RelayDown, RelayAddRule, RelayRemoveRule, RelayInit, RelayInstallService, RelayUninstallService, GetRelayLogs, RelayServerSetup, SelectDirectory, RelayCheck, GetAppVersion, CheckAppUpdate, StartQuick, QuickStop, QuickRunning, QuickURL, Diagnose } from '../wailsjs/go/main/App'
+import { IconDashboard, IconZap, IconRoute, IconTerminal, IconAlert, IconPlay, IconStop, IconRefresh, IconPlus, IconTrash, IconSend, IconClear, IconRelay, IconServer, IconLog, IconSetup, IconInfo, IconDiagnose } from './Icons'
 import { BrowserOpenURL } from '../wailsjs/runtime/runtime'
 
 type Route = { name: string; hostname: string; service: string }
 type RelayRule = { name: string; proto: string; local_port: number; remote_port: number; domain: string }
 type RelayStatus = { server: string; running: boolean; pid: string; rules: number }
-type Page = 'dashboard' | 'quick' | 'routes' | 'terminal' | 'relay-dashboard' | 'relay-rules' | 'relay-logs' | 'relay-setup' | 'about'
+type Page = 'dashboard' | 'quick' | 'routes' | 'diagnose' | 'terminal' | 'relay-dashboard' | 'relay-rules' | 'relay-logs' | 'relay-setup' | 'about'
 
 function App() {
   const [page, setPage] = useState<Page>('dashboard')
@@ -58,6 +58,7 @@ function App() {
       case 'dashboard': return <Dashboard status={status} isRunning={isRunning} routes={routes} loading={loading} setLoading={setLoading} refresh={refresh} />
       case 'quick': return <QuickMode />
       case 'routes': return <Routes routes={routes} refresh={refresh} />
+      case 'diagnose': return <DiagnosePage />
       case 'relay-dashboard': return <RelayDashboard status={relayStatus} rules={relayRules} loading={loading} setLoading={setLoading} refresh={refresh} />
       case 'relay-rules': return <RelayRules rules={relayRules} refresh={refresh} />
       case 'relay-logs': return <RelayLogsPage />
@@ -92,6 +93,7 @@ function Sidebar({ page, setPage, version }: { page: Page; setPage: (p: Page) =>
         <NavBtn id="dashboard" icon={<IconDashboard />} label="仪表盘" />
         <NavBtn id="quick" icon={<IconZap />} label="免域名模式" />
         <NavBtn id="routes" icon={<IconRoute />} label="路由管理" />
+        <NavBtn id="diagnose" icon={<IconDiagnose />} label="链路诊断" />
         <div className="sidebar-group">Relay 模式</div>
         <NavBtn id="relay-dashboard" icon={<IconRelay />} label="中继面板" />
         <NavBtn id="relay-rules" icon={<IconServer />} label="规则管理" />
@@ -855,6 +857,91 @@ function AboutPage({ version }: { version: string }) {
           </tbody>
         </table>
       </div>
+    </>
+  )
+}
+
+type DiagnoseData = {
+  cloudflared: { installed: boolean; path: string; version: string; running: boolean; pid: number }
+  api: { reachable: boolean; latency_ms: number; err: string }
+  routes: { name: string; hostname: string; service: string; local_ok: boolean; local_err: string; dns_ok: boolean; dns_err: string; http_ok: boolean; http_err: string }[]
+  total: number; passed: number; failed: number
+}
+
+function DiagnosePage() {
+  const [loading, setLoading] = useState(false)
+  const [data, setData] = useState<DiagnoseData | null>(null)
+
+  const run = async () => {
+    setLoading(true)
+    const result = await Diagnose()
+    setData(result)
+    setLoading(false)
+  }
+
+  const Check = ({ ok, err }: { ok: boolean; err?: string }) => (
+    <span style={{ color: ok ? 'var(--green)' : 'var(--red)' }}>
+      {ok ? '✓ 正常' : `✗ ${err || '异常'}`}
+    </span>
+  )
+
+  return (
+    <>
+      <div className="page-title">链路诊断</div>
+      <div className="card">
+        <div className="card-title">Cloud 模式诊断</div>
+        <p style={{ fontSize: 14, color: 'var(--text2)', marginBottom: 16 }}>
+          检测 cloudflared、Cloudflare API、本地服务、DNS 解析和域名可达性
+        </p>
+        <button className="btn btn-primary" onClick={run} disabled={loading}>
+          {loading ? <span className="spinner" /> : <IconDiagnose size={16} />} {loading ? '检测中...' : '开始检测'}
+        </button>
+      </div>
+      {data && (
+        <>
+          <div className="card">
+            <div className="card-title">基础检测</div>
+            <table className="route-table">
+              <tbody>
+                <tr>
+                  <td style={{ fontWeight: 600, width: 160 }}>cloudflared</td>
+                  <td><Check ok={data.cloudflared.installed} err="未安装" /></td>
+                  <td style={{ color: 'var(--text2)', fontSize: 13 }}>{data.cloudflared.version}</td>
+                </tr>
+                <tr>
+                  <td style={{ fontWeight: 600 }}>cloudflared 进程</td>
+                  <td><Check ok={data.cloudflared.running} err="未运行" /></td>
+                  <td style={{ color: 'var(--text2)', fontSize: 13 }}>{data.cloudflared.running ? `PID: ${data.cloudflared.pid}` : ''}</td>
+                </tr>
+                <tr>
+                  <td style={{ fontWeight: 600 }}>Cloudflare API</td>
+                  <td><Check ok={data.api.reachable} err={data.api.err || '不可达'} /></td>
+                  <td style={{ color: 'var(--text2)', fontSize: 13 }}>{data.api.reachable ? `${data.api.latency_ms}ms` : ''}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          {data.routes && data.routes.length > 0 && (
+            <div className="card">
+              <div className="card-title">路由检测 ({data.passed}/{data.total} 通过)</div>
+              <table className="route-table">
+                <thead><tr><th>路由</th><th>域名</th><th>本地服务</th><th>DNS</th><th>HTTPS</th></tr></thead>
+                <tbody>
+                  {data.routes.map(r => (
+                    <tr key={r.name}>
+                      <td>{r.name}</td>
+                      <td>{r.hostname}</td>
+                      <td><Check ok={r.local_ok} err={r.local_err} /></td>
+                      <td><Check ok={r.dns_ok} err={r.dns_err} /></td>
+                      <td>{r.dns_ok ? <Check ok={r.http_ok} err={r.http_err} /> : <span style={{ color: 'var(--text2)' }}>-</span>}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </>
+      )}
     </>
   )
 }
