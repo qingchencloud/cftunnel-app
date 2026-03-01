@@ -387,34 +387,43 @@ func extractTunnelURL(output string) string {
 	return ""
 }
 
+// DiagnoseCloudflaredInfo cloudflared 检测结果
+type DiagnoseCloudflaredInfo struct {
+	Installed bool   `json:"installed"`
+	Path      string `json:"path"`
+	Version   string `json:"version"`
+	Running   bool   `json:"running"`
+	PID       int    `json:"pid"`
+}
+
+// DiagnoseAPIInfo API 检测结果
+type DiagnoseAPIInfo struct {
+	Reachable bool   `json:"reachable"`
+	LatencyMS int64  `json:"latency_ms"`
+	Err       string `json:"err"`
+}
+
+// DiagnoseRouteInfo 路由检测结果
+type DiagnoseRouteInfo struct {
+	Name     string `json:"name"`
+	Hostname string `json:"hostname"`
+	Service  string `json:"service"`
+	LocalOK  bool   `json:"local_ok"`
+	LocalErr string `json:"local_err"`
+	DNSOK    bool   `json:"dns_ok"`
+	DNSErr   string `json:"dns_err"`
+	HTTPOK   bool   `json:"http_ok"`
+	HTTPErr  string `json:"http_err"`
+}
+
 // DiagnoseResult 诊断结果（与 cftunnel diagnose --json 输出对应）
 type DiagnoseResult struct {
-	Cloudflared struct {
-		Installed bool   `json:"installed"`
-		Path      string `json:"path"`
-		Version   string `json:"version"`
-		Running   bool   `json:"running"`
-		PID       int    `json:"pid"`
-	} `json:"cloudflared"`
-	API struct {
-		Reachable bool   `json:"reachable"`
-		LatencyMS int64  `json:"latency_ms"`
-		Err       string `json:"err"`
-	} `json:"api"`
-	Routes []struct {
-		Name     string `json:"name"`
-		Hostname string `json:"hostname"`
-		Service  string `json:"service"`
-		LocalOK  bool   `json:"local_ok"`
-		LocalErr string `json:"local_err"`
-		DNSOK    bool   `json:"dns_ok"`
-		DNSErr   string `json:"dns_err"`
-		HTTPOK   bool   `json:"http_ok"`
-		HTTPErr  string `json:"http_err"`
-	} `json:"routes"`
-	Total  int `json:"total"`
-	Passed int `json:"passed"`
-	Failed int `json:"failed"`
+	Cloudflared DiagnoseCloudflaredInfo `json:"cloudflared"`
+	API         DiagnoseAPIInfo         `json:"api"`
+	Routes      []DiagnoseRouteInfo     `json:"routes"`
+	Total       int                     `json:"total"`
+	Passed      int                     `json:"passed"`
+	Failed      int                     `json:"failed"`
 }
 
 // Diagnose 执行 Cloud 模式链路诊断
