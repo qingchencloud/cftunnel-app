@@ -19,6 +19,8 @@ Open the app and the home screen automatically checks common development ports (
 
 The default one-click mode stays enabled. Under **Advanced features → Settings**, turn on **Fixed domain mode** only when you need a persistent Cloudflare Tunnel. Enter the Cloudflare Account ID and API Token, then save. The client never stores a web-login password.
 
+Under **Advanced features → About**, the update center checks both the desktop client and the `cftunnel` CLI on startup. The CLI can be updated with one click; the desktop update opens the matching release download page. Startup checks can be disabled in **Settings**.
+
 Relay TCP/UDP settings, SSH credentials, logs, and diagnostics remain available under Advanced features.
 
 ![Settings and mode switch](docs/images/settings-mode.png)
@@ -50,6 +52,10 @@ go test ./...
 ```
 
 The app is built with Go + Wails v2 and React + TypeScript. The advanced screens call the optional [cftunnel CLI](https://github.com/qingchencloud/cftunnel); the one-click home flow works without pre-configuring it.
+
+## Community
+
+- [Telegram group](https://t.me/+-53et5QXFh0xYzhk)
 
 ## License
 

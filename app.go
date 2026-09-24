@@ -27,6 +27,8 @@ import (
 // AppVersion 客户端版本（构建时通过 ldflags 注入）
 var AppVersion = "dev"
 
+const telegramGroupURL = "https://t.me/+-53et5QXFh0xYzhk"
+
 // App 桌面客户端主结构
 type App struct {
 	ctx      context.Context
@@ -946,6 +948,7 @@ func parseRelayRules(output string) []RelayRuleInfo {
 
 // UpdateInfo 更新检测结果
 type UpdateInfo struct {
+	Product        string `json:"product"`
 	CurrentVersion string `json:"current_version"`
 	LatestVersion  string `json:"latest_version"`
 	HasUpdate      bool   `json:"has_update"`
@@ -958,16 +961,56 @@ func (a *App) GetAppVersion() string {
 	return AppVersion
 }
 
-// CheckAppUpdate 检查客户端更新
+// GetTelegramGroupURL 返回官方 Telegram 群地址。
+func (a *App) GetTelegramGroupURL() string {
+	return telegramGroupURL
+}
+
+// CheckAppUpdate 检查桌面客户端更新。
 func (a *App) CheckAppUpdate() UpdateInfo {
-	info := UpdateInfo{CurrentVersion: AppVersion}
+	return checkGitHubUpdate("客户端", "qingchencloud/cftunnel-app", AppVersion)
+}
+
+// CheckCLIUpdate 检查终端主体程序更新。
+func (a *App) CheckCLIUpdate() UpdateInfo {
+	current := "未安装"
+	if out, err := runCftunnel("version"); err == nil {
+		current = parseVersion(out)
+	}
+	return checkGitHubUpdate("终端", "qingchencloud/cftunnel", current)
+}
+
+// UpdateCLI 通过终端自身的安全更新流程更新 cftunnel CLI。
+func (a *App) UpdateCLI() string {
+	bin := findCftunnel()
+	if _, err := exec.LookPath(bin); err != nil {
+		return "错误: 未找到 cftunnel CLI，请先安装终端程序"
+	}
+	out, err := runCftunnel("update")
+	if err != nil {
+		return fmt.Sprintf("错误: %s\n%s", err, out)
+	}
+	return strings.TrimSpace(out)
+}
+
+// CheckAllUpdates 同时检查客户端和终端主体程序更新。
+func (a *App) CheckAllUpdates() []UpdateInfo {
+	return []UpdateInfo{a.CheckAppUpdate(), a.CheckCLIUpdate()}
+}
+
+func checkGitHubUpdate(product, repo, current string) UpdateInfo {
+	info := UpdateInfo{Product: product, CurrentVersion: strings.TrimPrefix(strings.TrimSpace(current), "v")}
 	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Get("https://api.github.com/repos/qingchencloud/cftunnel-app/releases/latest")
+	resp, err := client.Get("https://api.github.com/repos/" + repo + "/releases/latest")
 	if err != nil {
 		info.Err = "网络请求失败"
 		return info
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		info.Err = fmt.Sprintf("检查失败: HTTP %d", resp.StatusCode)
+		return info
+	}
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		info.Err = "读取响应失败"
@@ -983,6 +1026,44 @@ func (a *App) CheckAppUpdate() UpdateInfo {
 	}
 	info.LatestVersion = strings.TrimPrefix(release.TagName, "v")
 	info.ReleaseURL = release.HTMLURL
-	info.HasUpdate = info.LatestVersion != "" && info.LatestVersion != strings.TrimPrefix(AppVersion, "v")
+	info.HasUpdate = isNewerVersion(info.LatestVersion, info.CurrentVersion)
 	return info
+}
+
+func parseVersion(raw string) string {
+	for _, field := range strings.Fields(raw) {
+		field = strings.TrimSpace(strings.TrimPrefix(field, "cftunnel"))
+		field = strings.TrimPrefix(field, "v")
+		if field != "" && field[0] >= '0' && field[0] <= '9' {
+			return field
+		}
+	}
+	return strings.TrimSpace(raw)
+}
+
+func isNewerVersion(latest, current string) bool {
+	latest = strings.TrimPrefix(strings.TrimSpace(latest), "v")
+	current = strings.TrimPrefix(strings.TrimSpace(current), "v")
+	if latest == "" || current == "" || current == "未安装" {
+		return false
+	}
+	if current == "dev" {
+		return true
+	}
+	parse := func(v string) []int {
+		parts := strings.SplitN(v, "-", 2)[0]
+		chunks := strings.Split(parts, ".")
+		out := make([]int, 3)
+		for i := 0; i < len(chunks) && i < 3; i++ {
+			fmt.Sscanf(chunks[i], "%d", &out[i])
+		}
+		return out
+	}
+	lv, cv := parse(latest), parse(current)
+	for i := range lv {
+		if lv[i] != cv[i] {
+			return lv[i] > cv[i]
+		}
+	}
+	return false
 }

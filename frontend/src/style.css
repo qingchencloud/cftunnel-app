@@ -14,6 +14,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .nav-item.active{background:var(--accent);color:#fff}
 .sidebar-footer{padding:12px 16px;border-top:1px solid var(--border);font-size:12px;color:var(--text2)}
 .main{flex:1;overflow-y:auto;padding:24px}
+.update-banner{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:12px 16px;margin:-8px 0 18px;background:rgba(245,158,11,.1);border:1px solid rgba(245,158,11,.35);border-radius:10px;color:var(--text)}
+.update-banner strong{display:block;font-size:13px;color:var(--orange)}
+.update-banner span{display:block;font-size:12px;color:var(--text2);margin-top:2px}
 .page-title{font-size:22px;font-weight:700;margin-bottom:20px}
 .card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:20px;margin-bottom:16px}
 .card-title{font-size:15px;font-weight:600;margin-bottom:12px}
@@ -90,6 +93,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .url-row .btn{flex-shrink:0}
 .home-footnote{padding:14px 2px 0;color:var(--text2);font-size:12px}
 .home-footnote span{color:var(--text);font-weight:600;margin-right:6px}
+.community-link{margin-left:12px;color:var(--accent2);text-decoration:none}
+.community-link:hover{text-decoration:underline}
 @media (max-width:720px){.sidebar{width:158px}.main{padding:18px}.home-header{flex-direction:column;gap:12px}.service-list{grid-template-columns:1fr}.share-action{padding-left:14px;padding-right:14px}.home-header h1{font-size:26px}}
 .settings-card{max-width:760px}
 .setting-row{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:14px 0;border-top:1px solid var(--border)}
@@ -109,6 +114,12 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .settings-actions{display:flex;align-items:center;gap:12px;margin-top:16px}
 .settings-output{margin-top:12px;padding:10px 12px;border-radius:7px;background:rgba(34,197,94,.08);color:#bbf7d0;font-size:13px}
 .settings-output.error{background:rgba(239,68,68,.1);color:#fca5a5}
+.update-help{margin:-4px 0 14px}
+.update-list{display:flex;flex-direction:column;border-top:1px solid var(--border)}
+.update-row{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:13px 0;border-bottom:1px solid var(--border)}
+.update-row:last-child{border-bottom:0}
+.update-ok{font-size:12px;color:var(--green);white-space:nowrap}
+.update-error{font-size:12px;color:var(--red);text-align:right}
 @media (max-width:720px){.settings-form{grid-template-columns:1fr}.setting-row{align-items:flex-start}}
 .select{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:8px 12px;color:var(--text);font-size:14px;outline:none;cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238888a0' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center;padding-right:30px}
 .select:focus{border-color:var(--accent)}

@@ -1,13 +1,16 @@
 import { useState, useEffect, useCallback } from 'react'
 import './style.css'
-import { CheckInstall, GetStatus, GetRoutes, TunnelUp, TunnelDown, RunCommand, GetRelayStatus, GetRelayRules, RelayUp, RelayDown, RelayAddRule, RelayRemoveRule, RelayInit, RelayInstallService, RelayUninstallService, GetRelayLogs, RelayServerSetup, SelectDirectory, RelayCheck, GetAppVersion, CheckAppUpdate, StartQuick, QuickStop, QuickRunning, QuickURL, Diagnose, DetectLocalServices, GetCloudCredentialsStatus, SaveCloudCredentials } from '../wailsjs/go/main/App'
+import { CheckInstall, GetStatus, GetRoutes, TunnelUp, TunnelDown, RunCommand, GetRelayStatus, GetRelayRules, RelayUp, RelayDown, RelayAddRule, RelayRemoveRule, RelayInit, RelayInstallService, RelayUninstallService, GetRelayLogs, RelayServerSetup, SelectDirectory, RelayCheck, GetAppVersion, CheckAllUpdates, UpdateCLI, StartQuick, QuickStop, QuickRunning, QuickURL, Diagnose, DetectLocalServices, GetCloudCredentialsStatus, SaveCloudCredentials } from '../wailsjs/go/main/App'
 import { IconDashboard, IconZap, IconRoute, IconTerminal, IconAlert, IconPlay, IconStop, IconRefresh, IconPlus, IconTrash, IconSend, IconClear, IconRelay, IconServer, IconLog, IconSetup, IconInfo, IconDiagnose } from './Icons'
 import { BrowserOpenURL } from '../wailsjs/runtime/runtime'
 
 type Route = { name: string; hostname: string; service: string }
 type RelayRule = { name: string; proto: string; local_port: number; remote_port: number; domain: string }
 type RelayStatus = { server: string; running: boolean; pid: string; rules: number }
+type UpdateInfo = { product: string; current_version: string; latest_version: string; has_update: boolean; release_url: string; err?: string }
 type Page = 'home' | 'dashboard' | 'routes' | 'diagnose' | 'terminal' | 'relay-dashboard' | 'relay-rules' | 'relay-logs' | 'relay-setup' | 'settings' | 'about'
+
+const TELEGRAM_GROUP_URL = 'https://t.me/+-53et5QXFh0xYzhk'
 
 function App() {
   const [page, setPage] = useState<Page>('home')
@@ -19,6 +22,8 @@ function App() {
   // Relay 状态
   const [relayStatus, setRelayStatus] = useState<RelayStatus>({ server: '', running: false, pid: '', rules: 0 })
   const [relayRules, setRelayRules] = useState<RelayRule[]>([])
+  const [updates, setUpdates] = useState<UpdateInfo[]>([])
+  const [checkingUpdates, setCheckingUpdates] = useState(false)
 
   const refresh = useCallback(async () => {
     const info = await CheckInstall()
@@ -34,6 +39,27 @@ function App() {
   }, [])
 
   useEffect(() => { refresh() }, [refresh])
+
+  const checkUpdates = useCallback(async () => {
+    setCheckingUpdates(true)
+    try {
+      const result = await CheckAllUpdates()
+      setUpdates((result || []) as UpdateInfo[])
+    } catch {
+      // 浏览器预览没有 Wails bridge；桌面端会在启动时静默检查。
+    } finally {
+      setCheckingUpdates(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    let enabled = true
+    try { enabled = localStorage.getItem('cftunnel.autoUpdateCheck') !== 'false' } catch { /* 使用默认值 */ }
+    if (enabled) {
+      const timer = window.setTimeout(() => { void checkUpdates() }, 900)
+      return () => window.clearTimeout(timer)
+    }
+  }, [checkUpdates])
 
   // 全局拦截外部链接，用系统浏览器打开
   useEffect(() => {
@@ -65,7 +91,7 @@ function App() {
       case 'relay-setup': return <RelaySetupPage />
       case 'terminal': return <Terminal />
       case 'settings': return <SettingsPage />
-      case 'about': return <AboutPage version={version} />
+      case 'about': return <AboutPage version={version} updates={updates} checking={checkingUpdates} onCheck={checkUpdates} />
     }
   }
 
@@ -74,7 +100,10 @@ function App() {
       <div className="titlebar">cftunnel</div>
       <div className="app">
         <Sidebar page={page} setPage={setPage} version={version} />
-        <div className="main">{renderPage()}</div>
+        <div className="main">
+          {updates.some(u => u.has_update) && <UpdateBanner updates={updates} onOpen={() => setPage('about')} />}
+          {renderPage()}
+        </div>
       </div>
     </>
   )
@@ -111,6 +140,14 @@ function Sidebar({ page, setPage, version }: { page: Page; setPage: (p: Page) =>
       <div className="sidebar-footer">{version ? `v${version.replace(/^v/, '')}` : '就绪'}</div>
     </div>
   )
+}
+
+function UpdateBanner({ updates, onOpen }: { updates: UpdateInfo[]; onOpen: () => void }) {
+  const pending = updates.filter(u => u.has_update)
+  return <div className="update-banner">
+    <div><strong>发现可用更新</strong><span>{pending.map(u => `${u.product} v${u.latest_version}`).join('、')}</span></div>
+    <button className="btn btn-primary" onClick={onOpen}>打开更新中心</button>
+  </div>
 }
 
 function NotInstalled() {
@@ -318,7 +355,9 @@ function Home() {
         </div>
       )}
 
-      <div className="home-footnote"><span>安全提示</span> 临时地址只在分享期间有效。需要固定域名或中继 TCP/UDP？请展开左侧“高级功能”。</div>
+      <div className="home-footnote"><span>安全提示</span> 临时地址只在分享期间有效。需要固定域名或中继 TCP/UDP？请展开左侧“高级功能”。
+        <a className="community-link" href={TELEGRAM_GROUP_URL} target="_blank">加入 Telegram 群</a>
+      </div>
     </div>
   )
 }
@@ -808,6 +847,9 @@ function Terminal() {
 }
 
 function SettingsPage() {
+  const [autoUpdateCheck, setAutoUpdateCheck] = useState(() => {
+    try { return localStorage.getItem('cftunnel.autoUpdateCheck') !== 'false' } catch { return true }
+  })
   const [fixedEnabled, setFixedEnabled] = useState(() => {
     try { return localStorage.getItem('cftunnel.fixedEnabled') === 'true' } catch { return false }
   })
@@ -824,6 +866,11 @@ function SettingsPage() {
   const toggleFixed = (enabled: boolean) => {
     setFixedEnabled(enabled)
     try { localStorage.setItem('cftunnel.fixedEnabled', String(enabled)) } catch { /* 忽略不可用的本地存储 */ }
+  }
+
+  const toggleAutoUpdate = (enabled: boolean) => {
+    setAutoUpdateCheck(enabled)
+    try { localStorage.setItem('cftunnel.autoUpdateCheck', String(enabled)) } catch { /* 忽略不可用的本地存储 */ }
   }
 
   const saveCredentials = async () => {
@@ -861,6 +908,10 @@ function SettingsPage() {
           <label className="switch"><input type="checkbox" checked={fixedEnabled} onChange={e => toggleFixed(e.target.checked)} /><span /></label>
         </div>
         <div className="setting-row">
+          <div><strong>启动时检查更新</strong><div className="muted">自动检查桌面客户端和 cftunnel 终端主体，发现新版本后在更新中心提示。</div></div>
+          <label className="switch"><input type="checkbox" checked={autoUpdateCheck} onChange={e => toggleAutoUpdate(e.target.checked)} /><span /></label>
+        </div>
+        <div className="setting-row">
           <div><strong>中继模式</strong><div className="muted">TCP / UDP 和自建服务器配置在“中继面板”中管理。</div></div>
           <span className="setting-status">高级功能</span>
         </div>
@@ -880,30 +931,29 @@ function SettingsPage() {
   )
 }
 
-function AboutPage({ version }: { version: string }) {
+function AboutPage({ version, updates, checking, onCheck }: { version: string; updates: UpdateInfo[]; checking: boolean; onCheck: () => Promise<void> }) {
   const [appVersion, setAppVersion] = useState('')
-  const [updateInfo, setUpdateInfo] = useState<{
-    current_version: string; latest_version: string; has_update: boolean; release_url: string; err?: string
-  } | null>(null)
-  const [checking, setChecking] = useState(false)
+  const [updatingCLI, setUpdatingCLI] = useState(false)
+  const [cliOutput, setCLIOutput] = useState('')
 
   useEffect(() => { GetAppVersion().then(setAppVersion) }, [])
 
-  const handleCheckUpdate = async () => {
-    setChecking(true)
-    setUpdateInfo(null)
+  const updateCLI = async () => {
+    setUpdatingCLI(true)
+    setCLIOutput('')
     try {
-      const info = await CheckAppUpdate()
-      setUpdateInfo(info)
+      setCLIOutput(await UpdateCLI())
+      await onCheck()
+    } catch (err) {
+      setCLIOutput(String(err))
     } finally {
-      setChecking(false)
+      setUpdatingCLI(false)
     }
   }
 
   return (
     <>
       <div className="page-title">关于我们</div>
-      {/* 项目信息 */}
       <div className="card">
         <div className="card-title">cftunnel</div>
         <p style={{ fontSize: 14, color: 'var(--text2)', marginBottom: 12 }}>
@@ -920,56 +970,38 @@ function AboutPage({ version }: { version: string }) {
           </tbody>
         </table>
       </div>
-      {/* 更新检测 */}
       <div className="card">
-        <div className="card-title">更新检测</div>
+        <div className="card-title">更新中心</div>
+        <p className="muted update-help">启动时会自动检查客户端和终端主体程序。更新前会保留当前配置。</p>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
-          <button className="btn btn-primary" onClick={handleCheckUpdate} disabled={checking}>
-            {checking ? <span className="spinner" /> : <IconRefresh />} {checking ? '检测中...' : '检查更新'}
+          <button className="btn btn-primary" onClick={() => void onCheck()} disabled={checking}>
+            {checking ? <span className="spinner" /> : <IconRefresh />} {checking ? '检测中...' : '检查全部更新'}
           </button>
         </div>
-        {updateInfo && (
-          <div style={{ fontSize: 14 }}>
-            {updateInfo.err ? (
-              <span style={{ color: 'var(--red)' }}>{updateInfo.err}</span>
-            ) : updateInfo.has_update ? (
-              <div>
-                <span style={{ color: 'var(--accent2)' }}>发现新版本: v{updateInfo.latest_version}</span>
-                <span style={{ color: 'var(--text2)', marginLeft: 8 }}>(当前: v{updateInfo.current_version})</span>
-                <div style={{ marginTop: 8 }}>
-                  <a href={updateInfo.release_url} target="_blank" className="btn btn-primary" style={{ textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                    前往下载
-                  </a>
-                </div>
+        <div className="update-list">
+          {updates.length === 0 && <div className="muted">点击上面的按钮获取最新版本信息。</div>}
+          {updates.map(info => <div className="update-row" key={info.product}>
+            <div><strong>{info.product}程序</strong><div className="muted">当前 v{info.current_version || 'dev'} · 最新 v{info.latest_version || '未知'}</div></div>
+            {info.err ? <span className="update-error">{info.err}</span> : info.has_update ? (
+              <div className="btn-group">
+                {info.product === '终端' ? <button className="btn btn-primary" onClick={() => void updateCLI()} disabled={updatingCLI}>{updatingCLI ? <span className="spinner" /> : <IconSetup />} 一键更新</button> : <a href={info.release_url} target="_blank" className="btn btn-primary" style={{ textDecoration: 'none' }}>下载新版</a>}
               </div>
-            ) : (
-              <span style={{ color: 'var(--green)' }}>已是最新版本 (v{updateInfo.current_version})</span>
-            )}
-          </div>
-        )}
+            ) : <span className="update-ok">已是最新</span>}
+          </div>)}
+        </div>
+        {cliOutput && <div className="settings-output" style={{ marginTop: 12, whiteSpace: 'pre-wrap' }}>{cliOutput}</div>}
       </div>
-      {/* 关联项目 */}
       <div className="card">
         <div className="card-title">关联项目</div>
         <table className="route-table">
           <thead><tr><th>项目</th><th>说明</th></tr></thead>
           <tbody>
-            <tr>
-              <td><a href="https://github.com/qingchencloud/cftunnel" target="_blank" style={{ color: 'var(--accent2)' }}>cftunnel</a></td>
-              <td>CLI 命令行工具（本项目核心）</td>
-            </tr>
-            <tr>
-              <td><a href="https://github.com/qingchencloud/cftunnel-app" target="_blank" style={{ color: 'var(--accent2)' }}>cftunnel-app</a></td>
-              <td>桌面客户端（Wails + React）</td>
-            </tr>
-            <tr>
-              <td><a href="https://github.com/qingchencloud/clawapp" target="_blank" style={{ color: 'var(--accent2)' }}>ClawApp</a></td>
-              <td>跨平台桌面应用</td>
-            </tr>
+            <tr><td><a href="https://github.com/qingchencloud/cftunnel" target="_blank" style={{ color: 'var(--accent2)' }}>cftunnel</a></td><td>CLI 命令行工具（本项目核心）</td></tr>
+            <tr><td><a href="https://github.com/qingchencloud/cftunnel-app" target="_blank" style={{ color: 'var(--accent2)' }}>cftunnel-app</a></td><td>桌面客户端（Wails + React）</td></tr>
+            <tr><td><a href="https://github.com/qingchencloud/clawapp" target="_blank" style={{ color: 'var(--accent2)' }}>ClawApp</a></td><td>跨平台桌面应用</td></tr>
           </tbody>
         </table>
       </div>
-      {/* 联系方式 */}
       <div className="card">
         <div className="card-title">联系我们</div>
         <table className="route-table">
@@ -977,6 +1009,7 @@ function AboutPage({ version }: { version: string }) {
             <tr><td style={{ fontWeight: 600, width: 120 }}>GitHub</td><td><a href="https://github.com/qingchencloud/cftunnel" target="_blank" style={{ color: 'var(--accent2)' }}>qingchencloud/cftunnel</a></td></tr>
             <tr><td style={{ fontWeight: 600 }}>Issues</td><td><a href="https://github.com/qingchencloud/cftunnel/issues" target="_blank" style={{ color: 'var(--accent2)' }}>反馈问题</a></td></tr>
             <tr><td style={{ fontWeight: 600 }}>QQ 群</td><td><a href="https://qm.qq.com/q/qUfdR0jJVS" target="_blank" style={{ color: 'var(--accent2)' }}>OpenClaw 交流群</a></td></tr>
+            <tr><td style={{ fontWeight: 600 }}>Telegram 群</td><td><a href={TELEGRAM_GROUP_URL} target="_blank" style={{ color: 'var(--accent2)' }}>加入 cftunnel Telegram 群</a></td></tr>
           </tbody>
         </table>
       </div>

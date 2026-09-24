@@ -162,3 +162,27 @@ func TestParseRelayRulesFields(t *testing.T) {
 		t.Errorf("RemotePort = %d, want %d", r.RemotePort, 25565)
 	}
 }
+
+func TestUpdateVersionComparison(t *testing.T) {
+	tests := []struct {
+		latest, current string
+		want            bool
+	}{
+		{"0.4.3", "0.4.2", true},
+		{"0.4.2", "0.4.2", false},
+		{"v1.0.0", "0.9.9", true},
+		{"0.4.1", "0.4.2", false},
+		{"0.4.3", "未安装", false},
+	}
+	for _, tt := range tests {
+		if got := isNewerVersion(tt.latest, tt.current); got != tt.want {
+			t.Errorf("isNewerVersion(%q, %q) = %v, want %v", tt.latest, tt.current, got, tt.want)
+		}
+	}
+}
+
+func TestParseVersion(t *testing.T) {
+	if got := parseVersion("cftunnel v0.4.2\n"); got != "0.4.2" {
+		t.Fatalf("parseVersion() = %q", got)
+	}
+}
