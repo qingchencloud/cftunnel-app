@@ -79,7 +79,7 @@ function App() {
   const isRunning = status.includes('运行中')
 
   const renderPage = () => {
-    if (!installed && page !== 'home') return <NotInstalled />
+    if (!installed && page !== 'home' && page !== 'about' && page !== 'settings') return <NotInstalled />
     switch (page) {
       case 'home': return <Home />
       case 'dashboard': return <Dashboard status={status} isRunning={isRunning} routes={routes} loading={loading} setLoading={setLoading} refresh={refresh} />
@@ -982,7 +982,7 @@ function AboutPage({ version, updates, checking, onCheck }: { version: string; u
           {updates.length === 0 && <div className="muted">点击上面的按钮获取最新版本信息。</div>}
           {updates.map(info => <div className="update-row" key={info.product}>
             <div><strong>{info.product}程序</strong><div className="muted">当前 v{info.current_version || 'dev'} · 最新 v{info.latest_version || '未知'}</div></div>
-            {info.err ? <span className="update-error">{info.err}</span> : info.has_update ? (
+            {info.err ? <span className="update-error">{info.err}</span> : info.current_version === '未安装' ? <span className="muted">未安装 CLI</span> : info.has_update ? (
               <div className="btn-group">
                 {info.product === '终端' ? <button className="btn btn-primary" onClick={() => void updateCLI()} disabled={updatingCLI}>{updatingCLI ? <span className="spinner" /> : <IconSetup />} 一键更新</button> : <a href={info.release_url} target="_blank" className="btn btn-primary" style={{ textDecoration: 'none' }}>下载新版</a>}
               </div>
