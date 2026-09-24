@@ -1,16 +1,16 @@
 import { useState, useEffect, useCallback } from 'react'
 import './style.css'
-import { CheckInstall, GetStatus, GetRoutes, TunnelUp, TunnelDown, RunCommand, GetRelayStatus, GetRelayRules, RelayUp, RelayDown, RelayAddRule, RelayRemoveRule, RelayInit, RelayInstallService, RelayUninstallService, GetRelayLogs, RelayServerSetup, SelectDirectory, RelayCheck, GetAppVersion, CheckAppUpdate, StartQuick, QuickStop, QuickRunning, QuickURL, Diagnose } from '../wailsjs/go/main/App'
+import { CheckInstall, GetStatus, GetRoutes, TunnelUp, TunnelDown, RunCommand, GetRelayStatus, GetRelayRules, RelayUp, RelayDown, RelayAddRule, RelayRemoveRule, RelayInit, RelayInstallService, RelayUninstallService, GetRelayLogs, RelayServerSetup, SelectDirectory, RelayCheck, GetAppVersion, CheckAppUpdate, StartQuick, QuickStop, QuickRunning, QuickURL, Diagnose, DetectLocalServices, GetCloudCredentialsStatus, SaveCloudCredentials } from '../wailsjs/go/main/App'
 import { IconDashboard, IconZap, IconRoute, IconTerminal, IconAlert, IconPlay, IconStop, IconRefresh, IconPlus, IconTrash, IconSend, IconClear, IconRelay, IconServer, IconLog, IconSetup, IconInfo, IconDiagnose } from './Icons'
 import { BrowserOpenURL } from '../wailsjs/runtime/runtime'
 
 type Route = { name: string; hostname: string; service: string }
 type RelayRule = { name: string; proto: string; local_port: number; remote_port: number; domain: string }
 type RelayStatus = { server: string; running: boolean; pid: string; rules: number }
-type Page = 'dashboard' | 'quick' | 'routes' | 'diagnose' | 'terminal' | 'relay-dashboard' | 'relay-rules' | 'relay-logs' | 'relay-setup' | 'about'
+type Page = 'home' | 'dashboard' | 'routes' | 'diagnose' | 'terminal' | 'relay-dashboard' | 'relay-rules' | 'relay-logs' | 'relay-setup' | 'settings' | 'about'
 
 function App() {
-  const [page, setPage] = useState<Page>('dashboard')
+  const [page, setPage] = useState<Page>('home')
   const [version, setVersion] = useState('')
   const [installed, setInstalled] = useState(false)
   const [status, setStatus] = useState('')
@@ -53,10 +53,10 @@ function App() {
   const isRunning = status.includes('运行中')
 
   const renderPage = () => {
-    if (!installed) return <NotInstalled />
+    if (!installed && page !== 'home') return <NotInstalled />
     switch (page) {
+      case 'home': return <Home />
       case 'dashboard': return <Dashboard status={status} isRunning={isRunning} routes={routes} loading={loading} setLoading={setLoading} refresh={refresh} />
-      case 'quick': return <QuickMode />
       case 'routes': return <Routes routes={routes} refresh={refresh} />
       case 'diagnose': return <DiagnosePage />
       case 'relay-dashboard': return <RelayDashboard status={relayStatus} rules={relayRules} loading={loading} setLoading={setLoading} refresh={refresh} />
@@ -64,6 +64,7 @@ function App() {
       case 'relay-logs': return <RelayLogsPage />
       case 'relay-setup': return <RelaySetupPage />
       case 'terminal': return <Terminal />
+      case 'settings': return <SettingsPage />
       case 'about': return <AboutPage version={version} />
     }
   }
@@ -80,6 +81,7 @@ function App() {
 }
 
 function Sidebar({ page, setPage, version }: { page: Page; setPage: (p: Page) => void; version: string }) {
+  const [showAdvanced, setShowAdvanced] = useState(false)
   const NavBtn = ({ id, icon, label }: { id: Page; icon: JSX.Element; label: string }) => (
     <button className={`nav-item${page === id ? ' active' : ''}`} onClick={() => setPage(id)}>
       {icon} {label}
@@ -87,23 +89,26 @@ function Sidebar({ page, setPage, version }: { page: Page; setPage: (p: Page) =>
   )
   return (
     <div className="sidebar">
-      <div className="sidebar-header">cf<span>tunnel</span></div>
+      <div className="sidebar-header"><span className="brand-mark">cf</span><span>tunnel</span></div>
       <div className="sidebar-nav">
-        <div className="sidebar-group">Cloud 模式</div>
-        <NavBtn id="dashboard" icon={<IconDashboard />} label="仪表盘" />
-        <NavBtn id="quick" icon={<IconZap />} label="免域名模式" />
-        <NavBtn id="routes" icon={<IconRoute />} label="路由管理" />
-        <NavBtn id="diagnose" icon={<IconDiagnose />} label="链路诊断" />
-        <div className="sidebar-group">Relay 模式</div>
-        <NavBtn id="relay-dashboard" icon={<IconRelay />} label="中继面板" />
-        <NavBtn id="relay-rules" icon={<IconServer />} label="规则管理" />
-        <NavBtn id="relay-logs" icon={<IconLog />} label="中继日志" />
-        <NavBtn id="relay-setup" icon={<IconSetup />} label="服务端部署" />
-        <div className="sidebar-group">通用</div>
-        <NavBtn id="terminal" icon={<IconTerminal />} label="终端" />
-        <NavBtn id="about" icon={<IconInfo />} label="关于我们" />
+        <NavBtn id="home" icon={<IconZap />} label="一键分享" />
+        <button className={`nav-item nav-toggle${showAdvanced ? ' expanded' : ''}`} onClick={() => setShowAdvanced(v => !v)}>
+          <IconServer /> 高级功能 <span className="nav-chevron">{showAdvanced ? '−' : '+'}</span>
+        </button>
+        {showAdvanced && <div className="nav-advanced">
+          <NavBtn id="dashboard" icon={<IconDashboard />} label="仪表盘" />
+          <NavBtn id="routes" icon={<IconRoute />} label="路由管理" />
+          <NavBtn id="diagnose" icon={<IconDiagnose />} label="链路诊断" />
+          <NavBtn id="relay-dashboard" icon={<IconRelay />} label="中继面板" />
+          <NavBtn id="relay-rules" icon={<IconServer />} label="规则管理" />
+          <NavBtn id="relay-logs" icon={<IconLog />} label="中继日志" />
+          <NavBtn id="relay-setup" icon={<IconSetup />} label="服务端部署" />
+          <NavBtn id="terminal" icon={<IconTerminal />} label="终端" />
+          <NavBtn id="settings" icon={<IconSetup />} label="设置" />
+          <NavBtn id="about" icon={<IconInfo />} label="关于我们" />
+        </div>}
       </div>
-      <div className="sidebar-footer">{version || 'cftunnel'}</div>
+      <div className="sidebar-footer">{version ? `v${version.replace(/^v/, '')}` : '就绪'}</div>
     </div>
   )
 }
@@ -112,10 +117,11 @@ function NotInstalled() {
   return (
     <div className="empty">
       <div className="empty-icon"><IconAlert /></div>
-      <p>未检测到 cftunnel CLI</p>
+      <p>高级管理需要 cftunnel CLI</p>
       <p style={{ marginTop: 8, fontSize: 13, color: 'var(--text2)' }}>
-        请先安装: curl -fsSL https://raw.githubusercontent.com/qingchencloud/cftunnel/main/install.sh | bash
+        左侧“一键分享”不需要额外配置；需要固定域名、路由或中继时，再安装 CLI 即可。
       </p>
+      <a href="https://github.com/qingchencloud/cftunnel#install" target="_blank" className="btn btn-outline" style={{ marginTop: 16, textDecoration: 'none' }}>查看安装方式</a>
     </div>
   )
 }
@@ -159,119 +165,163 @@ function Dashboard({ status, isRunning, routes, loading, setLoading, refresh }: 
   )
 }
 
-function QuickMode() {
-  const [port, setPort] = useState('3000')
+function Home() {
+  const [port, setPort] = useState('')
+  const [services, setServices] = useState<{ port: number; name: string; url: string; latency_ms: number }[]>([])
+  const [showManual, setShowManual] = useState(false)
   const [loading, setLoading] = useState(false)
   const [running, setRunning] = useState(false)
   const [url, setUrl] = useState('')
   const [error, setError] = useState('')
+  const [copied, setCopied] = useState(false)
+
+  const detect = useCallback(async () => {
+    try {
+      const found = await DetectLocalServices()
+      setServices(found || [])
+      if (!found?.length) setShowManual(true)
+      setPort(current => current || (found?.[0] ? String(found[0].port) : '3000'))
+    } catch {
+      setServices([])
+      setShowManual(true)
+      setPort(current => current || '3000')
+    }
+  }, [])
 
   const checkStatus = useCallback(async () => {
-    const r = await QuickRunning()
-    setRunning(r)
-    if (r) {
-      const u = await QuickURL()
-      if (u) setUrl(u)
-    } else {
+    try {
+      const active = await QuickRunning()
+      setRunning(active)
+      if (active) {
+        const currentURL = await QuickURL()
+        if (currentURL) setUrl(currentURL)
+      } else {
+        setUrl('')
+      }
+    } catch {
+      setRunning(false)
       setUrl('')
     }
   }, [])
 
-  useEffect(() => { checkStatus() }, [checkStatus])
+  useEffect(() => {
+    detect()
+    checkStatus()
+  }, [detect, checkStatus])
 
-  const start = async () => {
+  const start = async (selectedPort = port) => {
+    if (!selectedPort) return
     setLoading(true)
     setError('')
     setUrl('')
-    const result = await StartQuick(port)
-    if (result.err) {
-      setError(result.err)
-      setLoading(false)
-      return
-    }
-    if (result.url) {
-      setUrl(result.url)
-    }
-    await checkStatus()
-    setLoading(false)
-    // 如果启动成功但还没拿到 URL，自动轮询
-    if (!result.url) {
-      for (let i = 0; i < 20; i++) {
-        await new Promise(r => setTimeout(r, 1000))
-        const u = await QuickURL()
-        if (u) { setUrl(u); break }
-        const r2 = await QuickRunning()
-        if (!r2) { setError('cloudflared 启动后异常退出'); break }
+    setCopied(false)
+    try {
+      const result = await StartQuick(selectedPort)
+      if (result.err) {
+        setError(result.err)
+        return
       }
+      if (result.url) setUrl(result.url)
+      await checkStatus()
+      if (!result.url) {
+        for (let i = 0; i < 20; i++) {
+          await new Promise(r => setTimeout(r, 1000))
+          const currentURL = await QuickURL()
+          if (currentURL) { setUrl(currentURL); break }
+          if (!await QuickRunning()) { setError('穿透组件启动后退出，请检查本地服务是否仍在运行'); break }
+        }
+      }
+    } catch (err) {
+      setError(`启动失败: ${err instanceof Error ? err.message : '请重试'}`)
+    } finally {
+      setLoading(false)
+      await checkStatus()
     }
   }
 
   const stop = async () => {
     setLoading(true)
     setError('')
-    await QuickStop()
-    await checkStatus()
-    setLoading(false)
+    try {
+      await QuickStop()
+      await checkStatus()
+    } catch (err) {
+      setError(`停止失败: ${err instanceof Error ? err.message : '请重试'}`)
+    } finally {
+      setLoading(false)
+    }
   }
 
-  const copyUrl = () => {
-    if (url) navigator.clipboard.writeText(url)
+  const copyURL = async () => {
+    if (!url) return
+    try {
+      await navigator.clipboard.writeText(url)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1800)
+    } catch {
+      setError('复制失败，请手动选择地址复制')
+    }
   }
 
   return (
-    <>
-      <div className="page-title">免域名模式</div>
-      <div className="card">
-        <div className="card-title">快速启动</div>
-        <p style={{ fontSize: 14, color: 'var(--text2)', marginBottom: 16 }}>
-          零配置生成 *.trycloudflare.com 临时公网地址，后台持续运行直到手动停止
-        </p>
-        <div className="input-row" style={{ marginBottom: 16 }}>
-          <input className="input" style={{ width: 120 }} value={port}
-            onChange={e => setPort(e.target.value)} placeholder="端口" disabled={running} />
-          <button className="btn btn-primary" onClick={start} disabled={loading || running}>
-            {loading && !running ? <span className="spinner" /> : <IconZap size={16} />} 启动
-          </button>
-          <button className="btn btn-danger" onClick={stop} disabled={loading || !running}>
-            {loading && running ? <span className="spinner" /> : <IconStop />} 停止
-          </button>
-          <button className="btn btn-outline" onClick={checkStatus}><IconRefresh /> 刷新</button>
+    <div className="home-page">
+      <div className="home-header">
+        <div>
+          <div className="eyebrow">cftunnel / QUICK SHARE</div>
+          <h1>把本地服务分享出去</h1>
+          <p>不用域名，不用 Token。选一个正在运行的服务，点一次就得到公网地址。</p>
         </div>
-        {error && <div style={{ color: 'var(--red)', fontSize: 13, marginBottom: 8 }}>{error}</div>}
+        <button className="btn btn-outline detect-btn" onClick={detect} disabled={loading}>
+          <IconRefresh /> 重新检测
+        </button>
       </div>
-      {/* 运行状态卡片 */}
-      <div className="card">
-        <div className="card-title">运行状态</div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
-          <span className={`status-dot ${running ? 'running' : 'stopped'}`} />
-          <span>{running ? '隧道运行中' : '未运行'}</span>
+
+      <div className="share-card">
+        <div className="share-card-top">
+          <div>
+            <div className="card-title">选择本地服务</div>
+            <div className="muted">我们会自动寻找常见开发端口，不改动你的项目配置。</div>
+          </div>
+          <span className={`ready-badge${running ? ' live' : ''}`}><span className="ready-dot" />{running ? '分享中' : services.length ? '已发现服务' : '等待服务'}</span>
         </div>
-        {running && url && (
-          <div style={{ marginTop: 8 }}>
-            <div style={{ fontSize: 13, color: 'var(--text2)', marginBottom: 4 }}>公网地址</div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <code style={{ flex: 1, padding: '8px 12px', background: 'var(--bg2)', borderRadius: 6,
-                fontSize: 13, color: 'var(--accent2)', wordBreak: 'break-all' }}>{url}</code>
-              <button className="btn btn-outline" style={{ padding: '6px 12px', fontSize: 12 }}
-                onClick={copyUrl}>复制</button>
-              <button className="btn btn-outline" style={{ padding: '6px 12px', fontSize: 12 }}
-                onClick={() => BrowserOpenURL(url)}>打开</button>
-            </div>
+        {services.length > 0 ? (
+          <div className="service-list">
+            {services.map(service => (
+              <button key={service.port} className={`service-option${port === String(service.port) ? ' selected' : ''}`} onClick={() => setPort(String(service.port))} disabled={running}>
+                <span className="service-icon"><IconZap size={16} /></span>
+                <span className="service-copy"><strong>{service.name}</strong><small>{service.url}</small></span>
+                <span className="service-check">{port === String(service.port) ? '✓' : ''}</span>
+              </button>
+            ))}
           </div>
+        ) : (
+          <div className="empty-services"><span className="empty-services-icon"><IconRoute /></span><span>暂时没发现本地服务</span><small>启动你的项目后点“重新检测”，或直接输入端口。</small></div>
         )}
-        {running && !url && (
-          <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span className="spinner" />
-            <span style={{ fontSize: 13, color: 'var(--text2)' }}>域名获取中，请稍候...</span>
-            <button className="btn btn-outline" style={{ padding: '4px 10px', fontSize: 12 }}
-              onClick={checkStatus}><IconRefresh /> 刷新</button>
-          </div>
-        )}
+        <div className="share-controls">
+          {showManual ? <div className="manual-port">
+            <label htmlFor="quick-port">本地端口</label>
+            <input id="quick-port" className="input" value={port} onChange={e => setPort(e.target.value)} placeholder="例如 3000" disabled={running} />
+          </div> : <button className="text-button" onClick={() => setShowManual(true)}>其他端口</button>}
+          <button className="btn btn-primary share-action" onClick={() => running ? stop() : start()} disabled={loading || !port}>
+            {loading ? <span className="spinner" /> : running ? <IconStop /> : <IconZap size={17} />}
+            {loading ? '处理中...' : running ? '停止分享' : '一键生成地址'}
+          </button>
+        </div>
+        {error && <div className="inline-error">{error}</div>}
       </div>
-    </>
+
+      {running && url && (
+        <div className="url-card">
+          <div className="url-card-heading"><span className="live-pulse" />公网地址已生成</div>
+          <div className="url-row"><code>{url}</code><button className="btn btn-outline" onClick={copyURL}>{copied ? '已复制' : '复制'}</button><button className="btn btn-primary" onClick={() => BrowserOpenURL(url)}>打开</button></div>
+          <div className="muted">把这个地址发给需要访问你本地服务的人即可。</div>
+        </div>
+      )}
+
+      <div className="home-footnote"><span>安全提示</span> 临时地址只在分享期间有效。需要固定域名或中继 TCP/UDP？请展开左侧“高级功能”。</div>
+    </div>
   )
 }
-
 function Routes({ routes, refresh }: { routes: Route[]; refresh: () => Promise<void> }) {
   const [name, setName] = useState('')
   const [port, setPort] = useState('')
@@ -753,6 +803,79 @@ function Terminal() {
         </table>
         <p style={{ marginTop: 12, fontSize: 12, color: 'var(--text2)' }}>点击命令行可快速填入输入框</p>
       </div>
+    </>
+  )
+}
+
+function SettingsPage() {
+  const [fixedEnabled, setFixedEnabled] = useState(() => {
+    try { return localStorage.getItem('cftunnel.fixedEnabled') === 'true' } catch { return false }
+  })
+  const [configured, setConfigured] = useState(false)
+  const [accountID, setAccountID] = useState('')
+  const [apiToken, setApiToken] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [output, setOutput] = useState('')
+
+  useEffect(() => {
+    GetCloudCredentialsStatus().then(status => setConfigured(status.configured)).catch(() => setConfigured(false))
+  }, [])
+
+  const toggleFixed = (enabled: boolean) => {
+    setFixedEnabled(enabled)
+    try { localStorage.setItem('cftunnel.fixedEnabled', String(enabled)) } catch { /* 忽略不可用的本地存储 */ }
+  }
+
+  const saveCredentials = async () => {
+    if (!accountID.trim() || !apiToken.trim()) {
+      setOutput('请填写账户 ID 和 API Token')
+      return
+    }
+    setSaving(true)
+    setOutput('')
+    try {
+      const result = await SaveCloudCredentials(accountID, apiToken)
+      setOutput(result)
+      if (!result.startsWith('错误:')) {
+        setConfigured(true)
+        setApiToken('')
+      }
+    } catch (err) {
+      setOutput(`保存失败: ${err instanceof Error ? err.message : '请重试'}`)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <>
+      <div className="page-title">设置</div>
+      <div className="card settings-card">
+        <div className="card-title">使用模式</div>
+        <div className="setting-row">
+          <div><strong>一键分享</strong><div className="muted">无需账号、域名或任何配置，适合临时分享。</div></div>
+          <span className="setting-status enabled">始终可用</span>
+        </div>
+        <div className="setting-row">
+          <div><strong>固定域名模式</strong><div className="muted">启用后可管理自有域名和长期隧道。</div></div>
+          <label className="switch"><input type="checkbox" checked={fixedEnabled} onChange={e => toggleFixed(e.target.checked)} /><span /></label>
+        </div>
+        <div className="setting-row">
+          <div><strong>中继模式</strong><div className="muted">TCP / UDP 和自建服务器配置在“中继面板”中管理。</div></div>
+          <span className="setting-status">高级功能</span>
+        </div>
+      </div>
+
+      {fixedEnabled && <div className="card settings-card">
+        <div className="card-title">固定域名账号</div>
+        <p className="muted settings-help">Cloudflare 使用 API Token，不保存网页登录密码；Token 由本机 CLI 写入受限配置文件。</p>
+        <div className="settings-form">
+          <label>账户 ID<input className="input" value={accountID} onChange={e => setAccountID(e.target.value)} placeholder="Cloudflare Account ID" /></label>
+          <label>API Token<input className="input" type="password" value={apiToken} onChange={e => setApiToken(e.target.value)} placeholder={configured ? '已配置，如需更换请重新输入' : 'Cloudflare API Token'} /></label>
+        </div>
+        <div className="settings-actions"><button className="btn btn-primary" onClick={saveCredentials} disabled={saving}>{saving ? <span className="spinner" /> : <IconSetup />} 保存账号配置</button>{configured && <span className="setting-status enabled">已配置</span>}</div>
+        {output && <div className={`settings-output${output.startsWith('错误:') ? ' error' : ''}`}>{output}</div>}
+      </div>}
     </>
   )
 }

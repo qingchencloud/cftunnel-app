@@ -1,14 +1,21 @@
 package main
 
 import (
+	"archive/tar"
 	"bufio"
+	"bytes"
+	"compress/gzip"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
+	goruntime "runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -22,8 +29,8 @@ var AppVersion = "dev"
 
 // App 桌面客户端主结构
 type App struct {
-	ctx     context.Context
-	quickMu sync.Mutex
+	ctx      context.Context
+	quickMu  sync.Mutex
 	quickCmd *exec.Cmd
 	quickURL string
 }
@@ -43,6 +50,11 @@ type StatusInfo struct {
 	Output    string `json:"output"`
 }
 
+// CloudCredentialsStatus 只返回是否配置，不返回敏感凭据。
+type CloudCredentialsStatus struct {
+	Configured bool `json:"configured"`
+}
+
 // RouteInfo 路由信息
 type RouteInfo struct {
 	Name     string `json:"name"`
@@ -56,8 +68,17 @@ type QuickResult struct {
 	Err string `json:"err"`
 }
 
+// LocalService 是首页自动发现的本地服务。
+type LocalService struct {
+	Port      int    `json:"port"`
+	Name      string `json:"name"`
+	URL       string `json:"url"`
+	LatencyMS int64  `json:"latency_ms"`
+}
+
 // cftunnelBin 缓存 cftunnel 可执行文件路径
 var cftunnelBin string
+var cloudflaredMu sync.Mutex
 
 // findCftunnel 查找 cftunnel 可执行文件路径
 func findCftunnel() string {
@@ -106,6 +127,32 @@ func (a *App) CheckInstall() StatusInfo {
 	}
 }
 
+// GetCloudCredentialsStatus 检查固定域名模式是否已有 API 配置。
+func (a *App) GetCloudCredentialsStatus() CloudCredentialsStatus {
+	home, _ := os.UserHomeDir()
+	data, err := os.ReadFile(filepath.Join(home, ".cftunnel", "config.yml"))
+	if err != nil {
+		return CloudCredentialsStatus{}
+	}
+	return CloudCredentialsStatus{
+		Configured: bytes.Contains(data, []byte("api_token:")) && bytes.Contains(data, []byte("account_id:")),
+	}
+}
+
+// SaveCloudCredentials 由 CLI 负责写入受限权限的配置文件，不向前端返回 Token。
+func (a *App) SaveCloudCredentials(accountID, apiToken string) string {
+	accountID = strings.TrimSpace(accountID)
+	apiToken = strings.TrimSpace(apiToken)
+	if accountID == "" || apiToken == "" {
+		return "错误: 账户 ID 和 API Token 不能为空"
+	}
+	out, err := runCftunnel("init", "--token", apiToken, "--account", accountID)
+	if err != nil {
+		return fmt.Sprintf("错误: %s\n%s", err, out)
+	}
+	return "账号配置已保存。固定域名功能现在可以使用。"
+}
+
 // GetStatus 获取隧道状态
 func (a *App) GetStatus() string {
 	out, err := runCftunnel("status")
@@ -146,6 +193,12 @@ func parseRoutes(output string) []RouteInfo {
 
 // StartQuick 启动免域名模式（后台运行，立即返回）
 func (a *App) StartQuick(port string) QuickResult {
+	port = strings.TrimSpace(port)
+	portNum, err := strconv.Atoi(port)
+	if err != nil || portNum < 1 || portNum > 65535 {
+		return QuickResult{Err: "请输入 1-65535 之间的端口"}
+	}
+
 	a.quickMu.Lock()
 	// 检查是否已在运行
 	if a.quickCmd != nil && a.quickCmd.Process != nil {
@@ -154,14 +207,10 @@ func (a *App) StartQuick(port string) QuickResult {
 	}
 	a.quickMu.Unlock()
 
-	// 查找 cloudflared 路径
-	binPath, err := exec.LookPath("cloudflared")
+	// 首页模式自动准备 cloudflared，不再要求用户先安装 CLI 或手动配置。
+	binPath, err := ensureCloudflared()
 	if err != nil {
-		home, _ := os.UserHomeDir()
-		binPath = home + "/.cftunnel/cloudflared"
-		if _, err := os.Stat(binPath); err != nil {
-			return QuickResult{Err: "未找到 cloudflared，请先执行 cftunnel install"}
-		}
+		return QuickResult{Err: "正在准备穿透组件失败: " + err.Error()}
 	}
 
 	// 显式指定空配置文件，防止 cloudflared 读取用户已有的 ~/.cloudflared/config.yml
@@ -187,7 +236,7 @@ func (a *App) StartQuick(port string) QuickResult {
 	// 保存 PID
 	pidPath := quickPIDPath()
 	home, _ := os.UserHomeDir()
-	os.MkdirAll(home+"/.cftunnel", 0700)
+	os.MkdirAll(filepath.Join(home, ".cftunnel"), 0700)
 	os.WriteFile(pidPath, []byte(strconv.Itoa(cmd.Process.Pid)), 0600)
 
 	// 异步提取域名
@@ -227,8 +276,8 @@ func (a *App) StartQuick(port string) QuickResult {
 // quickConfigPath 返回 quick 模式专用的空配置文件路径
 func quickConfigPath() string {
 	home, _ := os.UserHomeDir()
-	dir := home + "/.cftunnel"
-	p := dir + "/quick-config.yml"
+	dir := filepath.Join(home, ".cftunnel")
+	p := filepath.Join(dir, "quick-config.yml")
 	if _, err := os.Stat(p); os.IsNotExist(err) {
 		os.MkdirAll(dir, 0700)
 		os.WriteFile(p, []byte("# cftunnel quick mode - empty config\n"), 0600)
@@ -239,13 +288,235 @@ func quickConfigPath() string {
 // quickURLPath 返回 URL 持久化文件路径
 func quickURLPath() string {
 	home, _ := os.UserHomeDir()
-	return home + "/.cftunnel/quick.url"
+	return filepath.Join(home, ".cftunnel", "quick.url")
 }
 
 // quickPIDPath 返回免域名模式专用 PID 文件路径（与自有域名模式的 cloudflared.pid 隔离）
 func quickPIDPath() string {
 	home, _ := os.UserHomeDir()
-	return home + "/.cftunnel/quick.pid"
+	return filepath.Join(home, ".cftunnel", "quick.pid")
+}
+
+// DetectLocalServices 探测常见开发端口，让用户无需手动填写端口。
+func (a *App) DetectLocalServices() []LocalService {
+	candidates := []struct {
+		port int
+		name string
+	}{
+		{3000, "Node / Next.js"},
+		{5173, "Vite"},
+		{8080, "Web 服务"},
+		{8000, "Python / Django"},
+		{5000, "Flask"},
+		{3001, "开发服务"},
+		{18789, "OpenClaw"},
+		{9801, "本地 API"},
+	}
+
+	services := make([]LocalService, 0, len(candidates))
+	for _, candidate := range candidates {
+		start := time.Now()
+		conn, err := net.DialTimeout("tcp", "127.0.0.1:"+strconv.Itoa(candidate.port), 180*time.Millisecond)
+		if err != nil {
+			continue
+		}
+		conn.Close()
+		services = append(services, LocalService{
+			Port:      candidate.port,
+			Name:      candidate.name,
+			URL:       "http://localhost:" + strconv.Itoa(candidate.port),
+			LatencyMS: time.Since(start).Milliseconds(),
+		})
+	}
+	return services
+}
+
+// ensureCloudflared 查找本机已有组件；缺失时从 Cloudflare 官方 release 自动下载。
+func ensureCloudflared() (string, error) {
+	cloudflaredMu.Lock()
+	defer cloudflaredMu.Unlock()
+
+	name := "cloudflared"
+	if goruntime.GOOS == "windows" {
+		name = "cloudflared.exe"
+	}
+
+	if p, err := exec.LookPath(name); err == nil {
+		return p, nil
+	}
+	home, _ := os.UserHomeDir()
+	localPath := filepath.Join(home, ".cftunnel", "bin", name)
+	if _, err := os.Stat(localPath); err == nil {
+		return localPath, nil
+	}
+
+	assetName, err := cloudflaredAssetName()
+	if err != nil {
+		return "", err
+	}
+	url, expectedSHA, err := cloudflaredReleaseAsset(assetName)
+	if err != nil {
+		return "", err
+	}
+
+	if err := os.MkdirAll(filepath.Dir(localPath), 0700); err != nil {
+		return "", err
+	}
+	resp, err := (&http.Client{Timeout: 90 * time.Second}).Get(url)
+	if err != nil {
+		return "", fmt.Errorf("下载失败: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("下载失败: HTTP %d", resp.StatusCode)
+	}
+
+	tmp, err := os.CreateTemp(filepath.Dir(localPath), ".cloudflared-*")
+	if err != nil {
+		return "", err
+	}
+	tmpPath := tmp.Name()
+	defer os.Remove(tmpPath)
+	if _, err := io.Copy(tmp, resp.Body); err != nil {
+		tmp.Close()
+		return "", err
+	}
+	if err := tmp.Sync(); err != nil {
+		tmp.Close()
+		return "", err
+	}
+	if expectedSHA != "" {
+		if _, err := tmp.Seek(0, 0); err != nil {
+			tmp.Close()
+			return "", err
+		}
+		h := sha256.New()
+		if _, err := io.Copy(h, tmp); err != nil {
+			tmp.Close()
+			return "", err
+		}
+		if !strings.EqualFold(fmt.Sprintf("%x", h.Sum(nil)), expectedSHA) {
+			tmp.Close()
+			return "", fmt.Errorf("下载校验失败")
+		}
+		if _, err := tmp.Seek(0, 0); err != nil {
+			tmp.Close()
+			return "", err
+		}
+	}
+	if err := tmp.Close(); err != nil {
+		return "", err
+	}
+
+	if strings.HasSuffix(url, ".tgz") {
+		if err := extractCloudflaredTGZ(tmpPath, localPath); err != nil {
+			return "", err
+		}
+		return localPath, nil
+	}
+	if err := os.Chmod(tmpPath, 0700); err != nil && goruntime.GOOS != "windows" {
+		return "", err
+	}
+	if err := os.Rename(tmpPath, localPath); err != nil {
+		return "", err
+	}
+	return localPath, nil
+}
+
+func cloudflaredAssetName() (string, error) {
+	switch goruntime.GOOS + "/" + goruntime.GOARCH {
+	case "darwin/arm64":
+		return "cloudflared-darwin-arm64.tgz", nil
+	case "darwin/amd64":
+		return "cloudflared-darwin-amd64.tgz", nil
+	case "linux/amd64":
+		return "cloudflared-linux-amd64", nil
+	case "linux/arm64":
+		return "cloudflared-linux-arm64", nil
+	case "windows/amd64":
+		return "cloudflared-windows-amd64.exe", nil
+	case "windows/arm64":
+		return "", fmt.Errorf("Windows ARM64 暂不支持自动准备 cloudflared，请使用 x64 客户端")
+	default:
+		return "", fmt.Errorf("不支持的平台: %s/%s", goruntime.GOOS, goruntime.GOARCH)
+	}
+}
+
+func cloudflaredReleaseAsset(name string) (string, string, error) {
+	client := &http.Client{Timeout: 20 * time.Second}
+	req, err := http.NewRequest(http.MethodGet, "https://api.github.com/repos/cloudflare/cloudflared/releases/latest", nil)
+	if err != nil {
+		return "", "", err
+	}
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("User-Agent", "cftunnel-app")
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", "", fmt.Errorf("读取 cloudflared 版本失败: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", "", fmt.Errorf("读取 cloudflared 版本失败: HTTP %d", resp.StatusCode)
+	}
+	var release struct {
+		Assets []struct {
+			Name               string `json:"name"`
+			BrowserDownloadURL string `json:"browser_download_url"`
+			Digest             string `json:"digest"`
+		} `json:"assets"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&release); err != nil {
+		return "", "", fmt.Errorf("解析 cloudflared 版本失败: %w", err)
+	}
+	for _, asset := range release.Assets {
+		if asset.Name == name && asset.BrowserDownloadURL != "" {
+			digest := strings.TrimPrefix(asset.Digest, "sha256:")
+			if digest == "" {
+				return "", "", fmt.Errorf("下载包缺少 SHA-256 校验值")
+			}
+			return asset.BrowserDownloadURL, digest, nil
+		}
+	}
+	return "", "", fmt.Errorf("当前平台没有可用的 cloudflared 下载包")
+}
+
+func extractCloudflaredTGZ(src, dest string) error {
+	f, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	gz, err := gzip.NewReader(f)
+	if err != nil {
+		return fmt.Errorf("解压失败: %w", err)
+	}
+	defer gz.Close()
+	tarReader := tar.NewReader(gz)
+	for {
+		header, err := tarReader.Next()
+		if err == io.EOF {
+			return fmt.Errorf("下载包中未找到 cloudflared")
+		}
+		if err != nil {
+			return fmt.Errorf("解压失败: %w", err)
+		}
+		if filepath.Base(header.Name) != "cloudflared" {
+			continue
+		}
+		out, err := os.OpenFile(dest, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0700)
+		if err != nil {
+			return err
+		}
+		_, copyErr := io.Copy(out, tarReader)
+		closeErr := out.Close()
+		if copyErr != nil {
+			return copyErr
+		}
+		if closeErr != nil {
+			return closeErr
+		}
+		return nil
+	}
 }
 
 // scanQuickURL 从 stderr 提取 trycloudflare.com 域名

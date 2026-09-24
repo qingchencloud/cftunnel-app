@@ -1,8 +1,36 @@
 package main
 
 import (
+	"net"
 	"testing"
 )
+
+func TestStartQuickRejectsInvalidPortBeforeDownload(t *testing.T) {
+	a := NewApp()
+	for _, port := range []string{"", "0", "65536", "abc", "3000;echo"} {
+		if result := a.StartQuick(port); result.Err == "" {
+			t.Errorf("StartQuick(%q) should reject invalid port", port)
+		}
+	}
+}
+
+func TestDetectLocalServicesReturnsKnownPort(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:3001")
+	if err != nil {
+		t.Skipf("port 3001 already in use: %v", err)
+	}
+	defer listener.Close()
+	services := NewApp().DetectLocalServices()
+	for _, service := range services {
+		if service.Port == 3001 {
+			if service.URL != "http://localhost:3001" {
+				t.Fatalf("URL = %q", service.URL)
+			}
+			return
+		}
+	}
+	t.Fatal("expected to detect port 3001")
+}
 
 func TestExtractTunnelURL(t *testing.T) {
 	tests := []struct {

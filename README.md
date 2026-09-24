@@ -5,12 +5,16 @@
 
 **cftunnel 桌面客户端** — 基于 [Wails](https://wails.io) 构建的跨平台 GUI。
 
-[cftunnel CLI](https://github.com/qingchencloud/cftunnel) 的可视化管理界面，让 Cloudflare Tunnel 内网穿透操作更直观。
+[English](README.en.md)
+
+[cftunnel CLI](https://github.com/qingchencloud/cftunnel) 的可视化管理界面，让 Cloudflare Tunnel 内网穿透操作更直观。打开客户端后，首页会自动发现本机常见开发端口，选择服务并点击一次即可生成临时公网地址。
 
 ## 功能
 
 - **仪表盘** — 隧道状态一目了然，一键启停
-- **免域名模式** — 输入端口即可生成 `*.trycloudflare.com` 临时公网地址
+- **一键分享** — 自动发现本地服务，自动准备 cloudflared，无需域名、Token 或手动配置
+- **免域名模式** — 选择端口即可生成 `*.trycloudflare.com` 临时公网地址
+- **模式开关** — 设置页可开启固定域名模式；账号配置按需填写，一键模式不受影响
 - **路由管理** — 可视化添加/删除路由，自动创建 DNS 记录
 - **中继面板** — Relay 模式服务器配置、启停控制、系统服务注册
 - **规则管理** — 可视化添加/删除中继穿透规则，支持 TCP/UDP/HTTP
@@ -23,7 +27,9 @@
 
 ## 截图
 
-> 深色主题 · macOS 毛玻璃标题栏 · SVG 系统图标
+![一键分享首页](docs/images/quick-share-overview.png)
+
+![设置与模式开关](docs/images/settings-mode.png)
 
 ## 下载安装
 
@@ -35,9 +41,26 @@
 | Windows | `cftunnel-app-windows.zip` |
 | Linux | `cftunnel-app-linux.tar.gz` |
 
-## 前置条件
+## 使用方式
 
-需要先安装 [cftunnel CLI](https://github.com/qingchencloud/cftunnel)：
+### 首页一键分享（推荐）
+
+安装并打开客户端后：
+
+1. 客户端自动检测 `3000`、`5173`、`8080` 等常见本地服务端口
+2. 选择要分享的服务
+3. 点击「一键生成地址」
+4. 复制或打开生成的 `*.trycloudflare.com` 地址
+
+首页模式会自动下载并缓存 Cloudflare 官方 `cloudflared`，不要求先配置域名、API Token 或账户 ID。
+
+### 账号与配置开关
+
+客户端默认保持轻量的一键模式。需要固定域名时，在「高级功能 → 设置」中打开「固定域名模式」，填写 Cloudflare `Account ID` 和 `API Token` 后保存；网页登录密码不会被客户端保存。中继服务器 Token、SSH 密钥或密码仍只在对应的中继页面按需配置。
+
+### 高级管理
+
+固定域名、路由管理、中继 TCP/UDP、服务端部署和终端等功能仍使用 [cftunnel CLI](https://github.com/qingchencloud/cftunnel)。首次进入高级功能时安装 CLI：
 
 ```bash
 # macOS / Linux
