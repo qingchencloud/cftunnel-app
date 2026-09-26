@@ -77,6 +77,20 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .empty-services{display:flex;flex-direction:column;align-items:center;gap:5px;padding:20px 12px;margin-bottom:18px;border:1px dashed var(--border);border-radius:8px;color:var(--text2);font-size:14px}
 .empty-services small{font-size:12px}
 .empty-services-icon{color:var(--text2);opacity:.8}
+.scenario-strip{margin:0 0 16px;padding-top:14px;border-top:1px solid var(--border)}
+.scenario-heading{display:flex;align-items:center;gap:8px;margin-bottom:9px;font-size:13px;color:var(--text)}
+.scenario-heading small{font-size:11px;color:var(--text2)}
+.scenario-list{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:7px}
+.scenario-chip{display:flex;align-items:center;gap:8px;padding:9px 8px;text-align:left;background:var(--surface2);border:1px solid transparent;border-radius:8px;color:var(--text);cursor:pointer;min-width:0}
+.scenario-chip:hover:not(:disabled),.scenario-chip.active{border-color:var(--accent);background:rgba(59,130,246,.12)}
+.scenario-chip:disabled{opacity:.65;cursor:default}
+.scenario-icon{display:grid;place-items:center;width:25px;height:25px;border-radius:6px;background:rgba(96,165,250,.12);color:var(--accent2);font-size:16px;flex-shrink:0}
+.scenario-chip span:last-child{display:flex;flex-direction:column;min-width:0}
+.scenario-chip strong{font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.scenario-chip small{font-size:10px;color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.recent-strip{display:flex;align-items:center;gap:7px;margin:-4px 0 12px;font-size:11px;color:var(--text2)}
+.recent-port{padding:3px 7px;border-radius:5px;border:1px solid var(--border);background:transparent;color:var(--accent2);font-family:monospace;font-size:11px;cursor:pointer}
+.recent-port:hover{border-color:var(--accent)}
 .share-controls{display:flex;align-items:center;gap:10px;padding-top:16px;border-top:1px solid var(--border)}
 .manual-port{display:flex;align-items:center;gap:10px}
 .manual-port label{font-size:13px;color:var(--text2);white-space:nowrap}
@@ -91,11 +105,18 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .url-row{display:flex;align-items:center;gap:8px;margin-bottom:8px}
 .url-row code{flex:1;min-width:0;color:#bbf7d0;font-size:13px;word-break:break-all}
 .url-row .btn{flex-shrink:0}
+.share-actions{display:flex;gap:8px;margin:10px 0 12px;flex-wrap:wrap}
+.qr-panel{display:flex;align-items:center;gap:14px;padding:12px;margin:0 0 12px;background:var(--surface2);border:1px solid var(--border);border-radius:8px}
+.qr-panel canvas{width:168px;height:168px;border-radius:6px;image-rendering:pixelated}
+.qr-panel strong{font-size:13px}
+.invite-card{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-top:14px;padding:14px 16px;background:rgba(96,165,250,.07);border:1px solid rgba(96,165,250,.2);border-radius:10px}
+.invite-card strong{font-size:13px}
+.invite-card p{margin-top:3px}
 .home-footnote{padding:14px 2px 0;color:var(--text2);font-size:12px}
 .home-footnote span{color:var(--text);font-weight:600;margin-right:6px}
 .community-link{margin-left:12px;color:var(--accent2);text-decoration:none}
 .community-link:hover{text-decoration:underline}
-@media (max-width:720px){.sidebar{width:158px}.main{padding:18px}.home-header{flex-direction:column;gap:12px}.service-list{grid-template-columns:1fr}.share-action{padding-left:14px;padding-right:14px}.home-header h1{font-size:26px}}
+@media (max-width:720px){.sidebar{width:158px}.main{padding:18px}.home-header{flex-direction:column;gap:12px}.service-list{grid-template-columns:1fr}.scenario-list{grid-template-columns:repeat(2,minmax(0,1fr))}.share-action{padding-left:14px;padding-right:14px}.home-header h1{font-size:26px}.invite-card{align-items:flex-start;flex-direction:column}}
 .settings-card{max-width:760px}
 .setting-row{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:14px 0;border-top:1px solid var(--border)}
 .setting-row:first-of-type{border-top:0;padding-top:0}

@@ -1,5 +1,6 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import './style.css'
+import QRCode from 'qrcode'
 import { CheckInstall, GetStatus, GetRoutes, TunnelUp, TunnelDown, RunCommand, GetRelayStatus, GetRelayRules, RelayUp, RelayDown, RelayAddRule, RelayRemoveRule, RelayInit, RelayInstallService, RelayUninstallService, GetRelayLogs, RelayServerSetup, SelectDirectory, RelayCheck, GetAppVersion, CheckAllUpdates, UpdateCLI, StartQuick, QuickStop, QuickRunning, QuickURL, Diagnose, DetectLocalServices, GetCloudCredentialsStatus, SaveCloudCredentials } from '../wailsjs/go/main/App'
 import { IconDashboard, IconZap, IconRoute, IconTerminal, IconAlert, IconPlay, IconStop, IconRefresh, IconPlus, IconTrash, IconSend, IconClear, IconRelay, IconServer, IconLog, IconSetup, IconInfo, IconDiagnose } from './Icons'
 import { BrowserOpenURL } from '../wailsjs/runtime/runtime'
@@ -11,6 +12,14 @@ type UpdateInfo = { product: string; current_version: string; latest_version: st
 type Page = 'home' | 'dashboard' | 'routes' | 'diagnose' | 'terminal' | 'relay-dashboard' | 'relay-rules' | 'relay-logs' | 'relay-setup' | 'settings' | 'about'
 
 const TELEGRAM_GROUP_URL = 'https://t.me/+-53et5QXFh0xYzhk'
+const INVITE_URL = 'https://cftunnel.qt.cool/?utm_source=desktop&utm_medium=share'
+
+const SHARE_SCENARIOS = [
+  { id: 'frontend', label: '前端预览', hint: 'Vite / Webpack', port: '5173', icon: '◈' },
+  { id: 'webapp', label: 'Web 应用', hint: 'Next.js / React', port: '3000', icon: '◎' },
+  { id: 'webhook', label: 'Webhook', hint: '回调与接口调试', port: '8080', icon: '↗' },
+  { id: 'homeassistant', label: 'Home Assistant', hint: '本地控制台', port: '8123', icon: '⌂' },
+]
 
 function App() {
   const [page, setPage] = useState<Page>('home')
@@ -205,12 +214,17 @@ function Dashboard({ status, isRunning, routes, loading, setLoading, refresh }: 
 function Home() {
   const [port, setPort] = useState('')
   const [services, setServices] = useState<{ port: number; name: string; url: string; latency_ms: number }[]>([])
+  const [recentPorts, setRecentPorts] = useState<string[]>(() => {
+    try { return JSON.parse(localStorage.getItem('cftunnel.recentPorts') || '[]') } catch { return [] }
+  })
   const [showManual, setShowManual] = useState(false)
   const [loading, setLoading] = useState(false)
   const [running, setRunning] = useState(false)
   const [url, setUrl] = useState('')
   const [error, setError] = useState('')
   const [copied, setCopied] = useState(false)
+  const [showQR, setShowQR] = useState(false)
+  const [inviteCopied, setInviteCopied] = useState(false)
 
   const detect = useCallback(async () => {
     try {
@@ -258,6 +272,7 @@ function Home() {
         setError(result.err)
         return
       }
+      rememberPort(selectedPort)
       if (result.url) setUrl(result.url)
       await checkStatus()
       if (!result.url) {
@@ -300,6 +315,26 @@ function Home() {
     }
   }
 
+  const rememberPort = (value: string) => {
+    const next = [value, ...recentPorts.filter(item => item !== value)].slice(0, 5)
+    setRecentPorts(next)
+    try { localStorage.setItem('cftunnel.recentPorts', JSON.stringify(next)) } catch { /* 忽略不可用的本地存储 */ }
+  }
+
+  const copyInvite = async () => {
+    try {
+      await navigator.clipboard.writeText(INVITE_URL)
+      setInviteCopied(true)
+      setTimeout(() => setInviteCopied(false), 1800)
+    } catch { setError('复制邀请链接失败，请手动复制') }
+  }
+
+  const shareToTelegram = () => {
+    if (!url) return
+    const text = `我正在用 cftunnel 分享本地服务：${url}`
+    BrowserOpenURL(`https://t.me/share/url?url=${encodeURIComponent(url)}&text=${encodeURIComponent(text)}`)
+  }
+
   return (
     <div className="home-page">
       <div className="home-header">
@@ -334,6 +369,15 @@ function Home() {
         ) : (
           <div className="empty-services"><span className="empty-services-icon"><IconRoute /></span><span>暂时没发现本地服务</span><small>启动你的项目后点“重新检测”，或直接输入端口。</small></div>
         )}
+        <div className="scenario-strip">
+          <div className="scenario-heading"><span>常用场景</span><small>点一下自动填入端口</small></div>
+          <div className="scenario-list">
+            {SHARE_SCENARIOS.map(scenario => <button key={scenario.id} className={`scenario-chip${port === scenario.port ? ' active' : ''}`} onClick={() => { setPort(scenario.port); setShowManual(true) }} disabled={running}>
+              <span className="scenario-icon">{scenario.icon}</span><span><strong>{scenario.label}</strong><small>{scenario.hint} · {scenario.port}</small></span>
+            </button>)}
+          </div>
+        </div>
+        {recentPorts.length > 0 && <div className="recent-strip"><span>最近使用</span>{recentPorts.map(item => <button key={item} className="recent-port" onClick={() => { setPort(item); setShowManual(true) }} disabled={running}>:{item}</button>)}</div>}
         <div className="share-controls">
           {showManual ? <div className="manual-port">
             <label htmlFor="quick-port">本地端口</label>
@@ -351,15 +395,31 @@ function Home() {
         <div className="url-card">
           <div className="url-card-heading"><span className="live-pulse" />公网地址已生成</div>
           <div className="url-row"><code>{url}</code><button className="btn btn-outline" onClick={copyURL}>{copied ? '已复制' : '复制'}</button><button className="btn btn-primary" onClick={() => BrowserOpenURL(url)}>打开</button></div>
+          <div className="share-actions"><button className="btn btn-outline" onClick={() => setShowQR(v => !v)}>{showQR ? '收起二维码' : '显示二维码'}</button><button className="btn btn-outline" onClick={shareToTelegram}>分享到 Telegram</button></div>
+          {showQR && <ShareQRCode url={url} />}
           <div className="muted">把这个地址发给需要访问你本地服务的人即可。</div>
         </div>
       )}
+
+      <div className="invite-card">
+        <div><strong>推荐朋友一起用</strong><p className="muted">把免费内网穿透工具分享给需要的人。</p></div>
+        <button className="btn btn-outline" onClick={copyInvite}>{inviteCopied ? '已复制' : '复制推荐链接'}</button>
+      </div>
 
       <div className="home-footnote"><span>安全提示</span> 临时地址只在分享期间有效。需要固定域名或中继 TCP/UDP？请展开左侧“高级功能”。
         <a className="community-link" href={TELEGRAM_GROUP_URL} target="_blank">加入 Telegram 群</a>
       </div>
     </div>
   )
+}
+
+function ShareQRCode({ url }: { url: string }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  useEffect(() => {
+    if (!canvasRef.current) return
+    QRCode.toCanvas(canvasRef.current, url, { width: 168, margin: 2, color: { dark: '#e4e4ef', light: '#12121a' } }).catch(() => undefined)
+  }, [url])
+  return <div className="qr-panel"><canvas ref={canvasRef} aria-label="分享地址二维码" /><div><strong>扫码访问</strong><p className="muted">手机扫描二维码即可打开分享地址。</p></div></div>
 }
 function Routes({ routes, refresh }: { routes: Route[]; refresh: () => Promise<void> }) {
   const [name, setName] = useState('')

@@ -12,6 +12,9 @@ Open the app and the home screen automatically checks common development ports (
 - No Cloudflare login or API token for temporary sharing
 - `cloudflared` is downloaded from the official Cloudflare release and cached locally
 - Copy or open the generated `*.trycloudflare.com` URL
+- Show a QR code, copy the URL, or share it directly to Telegram
+- Use one-click templates for frontend preview, web apps, webhooks, and Home Assistant
+- Recent local ports are remembered for the next launch
 
 ![Quick share overview](docs/images/quick-share-overview.png)
 
